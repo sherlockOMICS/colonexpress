@@ -94,5 +94,9 @@ if (!dir.exists(here::here("data/processed/merged"))) {
 }
 
 # Save merged counts and TPM tables
-saveRDS(counts, here::here("data/processed/merged/counts.rds"))
-saveRDS(tpm, here::here("data/processed/merged/tpm.rds"))
+counts_path <- here::here("data/processed/merged/counts.rds")
+tpm_path <- here::here("data/processed/merged/tpm.rds")
+
+if (!file.exists(counts_path)) saveRDS(counts, counts_path)
+if (!file.exists(tpm_path)) saveRDS(tpm, tpm_path)
+
