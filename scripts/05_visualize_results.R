@@ -53,12 +53,6 @@ sig_normalised_counts_scaled <- t(scale(t(sig_normalised_counts)))   # scale row
 range(sig_normalised_counts_scaled[1:200, ], na.rm = TRUE)
 quantile(sig_normalised_counts_scaled[1:200, ], c(0.01, 0.99), na.rm = TRUE)
 
-
-# # Clip extreme z-scores to avoid outliers dominating the color scale
-# sig_normalised_counts_scaled[sig_normalised_counts_scaled >  4] <-  4
-# sig_normalised_counts_scaled[sig_normalised_counts_scaled < -4] <- -4
-
-
 # Confirm range after clipping
 range(sig_normalised_counts_scaled, na.rm = TRUE)
 
@@ -96,8 +90,9 @@ de_plots$ht <- ComplexHeatmap::Heatmap(
 # Draw the heatmap
 ComplexHeatmap::draw(de_plots$ht, heatmap_legend_side = "right")
 
-
-# Volcano plot
+#
+## Volcano plot
+#
 
 # # Add a column with differential expression status and add gene symbol to the results
 sig_res_annot <-
@@ -107,39 +102,6 @@ sig_res_annot <-
     log2FoldChange < -5 & padj < 0.0001 ~ 'downregulated',
     TRUE ~ 'not_de')) |>
   dplyr::arrange(padj, log2FoldChange)
-
-# 
-# set.seed(42)
-# sig_res_annot_plot <- dplyr::bind_rows(
-#   dplyr::filter(sig_res_annot, diffexpressed != "not_de"),
-#   dplyr::filter(sig_res_annot, diffexpressed == "not_de") |>
-#     dplyr::slice_sample(n = 10000)
-# ) 
-
-
-# # Create a volcano plot using ggplot2
-# de_plots$volcano_plot <-
-#   ggplot(data = sig_res_annot, aes(
-#     x = log2FoldChange,
-#     y = -log10(padj),
-#     col = diffexpressed))+
-#   geom_point(size = 0.6) +
-#   # geom_text_repel(data = filter(sig_res_annot,
-#   #                               ((abs(log2FoldChange) > log2(8)) & (padj < -log10(0.05)))),
-#   #                 aes(label = gene_symbol), size = 2.5, max.overlaps = Inf) +
-#   ggtitle("DE genes | Cancer vs Healthy") +
-#   geom_vline(xintercept = c(-5, 5), col = "black", linetype = 'dashed', linewidth = 0.2) +
-#   geom_hline(yintercept = -log10(0.0001), col = "black", linetype = 'dashed', linewidth = 0.2) +
-#   theme(plot.title = element_text(size = rel(1.25), hjust = 0.5),
-#         axis.title = element_text(size = rel(1))) +
-#   scale_color_manual(values = c("upregulated" = "red",
-#                                 "downregulated" = "blue",
-#                                 "not_de" = "grey")) +
-#   labs(color = 'DE genes') +
-#   xlim(-25, 25) +   # Caution: This hides some genes
-#   ylim(0, 310) +  # Caution: This hides some genes
-#   theme_light()
-
 
 # Build the four-level significance factor
 sig_res_annot_plot <- sig_res_annot |>
@@ -206,16 +168,6 @@ de_plots$volcano_plot <-
     linewidth  = 0.3,
     colour     = "grey40"
   ) +
-  # ggrepel::geom_text_repel(
-  #   data           = top_genes,
-  #   aes(label      = gene_symbol),
-  #   size           = 2.8,
-  #   max.overlaps   = 30,
-  #   colour         = "black",
-  #   segment.colour = "grey60",
-  #   segment.size   = 0.2,
-  #   show.legend    = FALSE
-  # ) +
   scale_colour_manual(values = sig_colours) +
   scale_x_continuous(limits = c(-25, 25), breaks = seq(-25, 25, by = 5)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.02))) +
@@ -239,3 +191,22 @@ de_plots$volcano_plot <-
 
 # Print the volcano plot
 de_plots$volcano_plot
+
+#
+## PCA | Top genes driving PC1
+#
+
+# Extract and annotate PC1 and PC2 gene loadings
+pca_loadings <- pca_results$pca_vst$rotation |>
+  tibble::as_tibble(rownames = "gene_id") |>
+  dplyr::mutate(gene_id = stringr::str_remove(gene_id, "\\.\\d+$")) |>
+  dplyr::select(gene_id, PC1, PC2, PC3, PC4) |>
+  dplyr::left_join(normalised_counts |>
+                     dplyr::select(gene_id, gene_symbol) |>
+                     dplyr::distinct(), by = "gene_id") |>
+  dplyr::mutate(gene_symbol = dplyr::coalesce(gene_symbol, gene_id)) |>
+  dplyr::relocate(gene_symbol, .after = gene_id) |>
+  dplyr::arrange(dplyr::desc(PC1))
+
+# Save PCA loadings for PC1 and PC2 to CSV
+readr::write_csv2(pca_loadings, here::here("output/pca_loadings.csv"))

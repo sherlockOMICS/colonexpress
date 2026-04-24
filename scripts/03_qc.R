@@ -224,8 +224,6 @@ pdf(here::here("output/corr_clustering.pdf"), width = 8, height = 6)
 print(qc$corr_clustering)
 dev.off()
 
-
-
 # Export PCA object to disc
 data_processed_path <- here::here("data/processed/pca_results.RDS")
 if (!file.exists(data_processed_path)) saveRDS(qc[2:5], file = data_processed_path)
