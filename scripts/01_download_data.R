@@ -6,7 +6,7 @@ library(here)
 ## TCGA
 #
 
-### TCGA data downloaded in 13 March 2026 
+### TCGA data downloaded in 30 June 2026 
 
 # Create directories
 if(!dir.exists(here::here("data/raw/TCGA"))) {
@@ -75,7 +75,7 @@ saveRDS(tcga_data_se, here::here("data/processed/TCGA/tcga_data_se.rds"))
 ## GTEx
 #
 
-### GTEx data downloaded in 13 March 2026 
+### GTEx data downloaded in 30 June 2026 
 ### GTEx files download from: https://www.gtexportal.org/home/downloads/adult-gtex/bulk_tissue_expression
 
 # Create directories
@@ -146,7 +146,7 @@ for (file_name in gtex_file_names) {
 }
 
 ## Save the GTEx data object
-saveRDS(gtex_data, file = here("data/processed/GTEx/gtex.RDS"))
+saveRDS(gtex_data, file = here("data/processed/GTEx/gtex.rds"))
 
 
 

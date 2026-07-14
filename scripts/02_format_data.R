@@ -3,8 +3,9 @@ library(tibble)
 library(tidyr)
 library(dplyr)
 library(zeallot)
+library(stringr)
 library(here)
-
+ 
 #
 ## TCGA
 #
@@ -17,10 +18,19 @@ c(tcga_counts, tcga_tpm) %<-% local({
     load(here::here("data/processed/TCGA/TCGA-COAD.rds"))
     data
   })
+  
+  # Simplify staging to 4 main stages
+  colData(tcga_coad)$stage <- colData(tcga_coad)[["ajcc_pathologic_stage"]] |>
+    stringr::str_remove("[ABC]$")
+  
   tcga_read <- local({
     load(here::here("data/processed/TCGA/TCGA-READ.rds"))
     data
   })
+  
+  # Simplify staging to 4 main stages
+  colData(tcga_read)$stage <- colData(tcga_read)[["ajcc_pathologic_stage"]] |>
+    stringr::str_remove("[ABC]$")
   
   # Group datasets by tissue name for iteration
   tcga_list <- list(colon = tcga_coad, rectum = tcga_read)
@@ -34,13 +44,23 @@ c(tcga_counts, tcga_tpm) %<-% local({
     counts_list[[name]] <- SummarizedExperiment::assay(tcga_list[[name]], "unstranded") |>
       tibble::as_tibble(rownames = "gene_id") |>
       tidyr::pivot_longer(-1, names_to = "samples", values_to = "counts") |>
-      dplyr::mutate(tissue = as.factor(name), disease_status = as.factor("cancer"))
+      dplyr::mutate(
+        tissue = as.factor(name), 
+        disease_status = as.factor("cancer"),
+        stage = SummarizedExperiment::colData(tcga_list[[name]])[["stage"]][match(samples, rownames(SummarizedExperiment::colData(tcga_list[[name]])))],
+        shortLetterCode = SummarizedExperiment::colData(tcga_list[[name]])[["shortLetterCode"]][match(samples, rownames(SummarizedExperiment::colData(tcga_list[[name]])))]
+        )
     
     tpm_list[[name]] <- SummarizedExperiment::assay(tcga_list[[name]], "tpm_unstrand") |>
       tibble::as_tibble(rownames = "gene_id") |>
       tidyr::pivot_longer(-1, names_to = "samples", values_to = "tpm") |>
-      dplyr::mutate(tissue = as.factor(name), disease_status = as.factor("cancer"))
-  }
+      dplyr::mutate(
+        tissue = as.factor(name), 
+        disease_status = as.factor("cancer"),
+        stage = SummarizedExperiment::colData(tcga_list[[name]])[["stage"]][match(samples, rownames(SummarizedExperiment::colData(tcga_list[[name]])))],
+        shortLetterCode = SummarizedExperiment::colData(tcga_list[[name]])[["shortLetterCode"]][match(samples, rownames(SummarizedExperiment::colData(tcga_list[[name]])))]
+      )
+    }
   
   # Return combined tables for all tissues
   list(dplyr::bind_rows(counts_list),
@@ -55,7 +75,7 @@ c(tcga_counts, tcga_tpm) %<-% local({
 c(gtex_counts, gtex_tpm) %<-% local({
   
   # Load GTEx data
-  gtex <- readRDS(here::here("data/processed/GTEx/gtex.RDS"))
+  gtex <- readRDS(here::here("data/processed/GTEx/gtex.rds"))
   
   # Initialize empty lists to store counts and TPM tables per tissue
   counts_list <- list()
@@ -68,15 +88,25 @@ c(gtex_counts, gtex_tpm) %<-% local({
       counts_list[[name]] <- gtex[[name]] |>
         dplyr::rename(gene_id = Name, gene_name = Description) |>
         tidyr::pivot_longer(-c(1,2), names_to = "samples", values_to = "counts") |>
-        dplyr::mutate(tissue = as.factor(tissue), disease_status = as.factor("healthy"))
+        dplyr::mutate(
+          tissue = as.factor(tissue), 
+          disease_status = as.factor("healthy"),
+          stage = "healthy",
+          shortLetterCode = "healthy"
+          )
       
     } else if (grepl("^tpm_", name)) {
       tissue <- gsub("tpm_", "", name)
       tpm_list[[name]] <- gtex[[name]] |>
         dplyr::rename(gene_id = Name, gene_name = Description) |>
         tidyr::pivot_longer(-c(1,2), names_to = "samples", values_to = "tpm") |>
-        dplyr::mutate(tissue = as.factor(tissue), disease_status = as.factor("healthy"))
-    }
+        dplyr::mutate(
+          tissue = as.factor(tissue), 
+          disease_status = as.factor("healthy"),
+          stage = "healthy",
+          shortLetterCode = "healthy"
+        )
+      }
   }
   
   # Return combined tables for all tissues
@@ -100,3 +130,4 @@ tpm_path <- here::here("data/processed/merged/tpm.rds")
 if (!file.exists(counts_path)) saveRDS(counts, counts_path)
 if (!file.exists(tpm_path)) saveRDS(tpm, tpm_path)
 
+ 

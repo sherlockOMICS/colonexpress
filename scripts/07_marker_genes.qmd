@@ -1,0 +1,160 @@
+---
+title: "Colorectal Cancer: Marker Genes Expression Analysis"
+author: "CBL Students | Ana Carolina Fernandes & Nuno Aguileira & Vitoria Correia"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    toc-title: "Contents"
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    embed-resources: true
+    df-print: paged
+    lightbox: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Clinical Background
+
+In clinical practice, diagnostic laboratories routinely offer genetic testing on panels of genes associated with specific diseases. For colorectal cancer, two clinically validated gene panels are used in diagnostic settings in Portugal, as defined by the [Germano de Sousa](https://genetica.germanodesousa.com) genetics laboratory:
+
+**Hereditary Colon Cancer Panel (19 genes)** ([source](https://genetica.germanodesousa.com/analises/4002/)) — used to identify germline mutations associated with hereditary colorectal cancer syndromes such as Lynch syndrome and familial adenomatous polyposis. The genes included are: APC, BMPR1A, MLH1, MSH2, MSH6, PMS2, EPCAM, MUTYH, PTEN, STK11, SMAD4, TP53, GREM1, POLD1, POLE, AXIN2, NTHL1, MSH3, and CHEK2.
+
+**Somatic Colon Panel — Liquid or Tissue Biopsy (5 genes)** ([liquid biopsy source](https://genetica.germanodesousa.com/analises/4433/) \| [tissue biopsy source](https://genetica.germanodesousa.com/analises/4434/)) — used to identify somatic mutational hotspots in tumour tissue or liquid biopsy samples, with implications for targeted therapy selection. The genes included are: KRAS, NRAS, BRAF, PIK3CA, and AKT1.
+
+Here we analyse the TPM expression levels of these clinically relevant marker genes across cancer and healthy samples, to assess whether their transcriptional profiles differ between the two groups.
+
+# Data and Marker Genes Setup
+
+This section loads the gene expression data and defines the marker genes of interest. The two clinical panels described above are used to annotate each gene, which will later be reflected in the colour coding of the plots. The table below lists all 24 marker genes alongside their corresponding ENSEMBL identifier and clinical panel.
+
+```{r}
+#| label: setup
+
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(ggh4x)
+library(ggtext)
+
+# Load data
+tpm <- readRDS(here::here("data/processed/merged/tpm.rds"))
+normalised_counts <- readRDS(here::here("data/processed/normalised_counts.rds"))
+de_results <- readr::read_rds(here::here("data/processed/de_results.rds"))
+
+# Define marker genes and their clinical panel
+marker_genes <- data.frame(
+  gene_symbol = c("APC", "BMPR1A", "MLH1", "MSH2", "MSH6", "PMS2", "EPCAM", "MUTYH", "PTEN", "STK11",
+                  "SMAD4", "TP53", "GREM1", "POLD1", "POLE", "AXIN2", "NTHL1", "MSH3", "CHEK2", "KRAS",
+                  "NRAS", "BRAF", "PIK3CA", "AKT1"),
+  panel = c(
+    rep("Hereditary Colon Cancer", 19),
+    rep("Somatic Colon Panel, Liquid or Tissue Biopsy", 5)
+  )
+)
+
+# Add ENSEMBL gene IDs by joining with normalised counts annotations
+marker_genes <- marker_genes |>
+  dplyr::left_join(
+    dplyr::select(normalised_counts, gene_id, gene_symbol),
+    by = "gene_symbol"
+  ) |>
+  dplyr::relocate(gene_id, .before = panel)
+
+# Remove Ensembl version suffixes from TPM gene IDs to allow joining with marker genes
+tpm <- tpm |>
+  dplyr::mutate(gene_id = stringr::str_remove(gene_id, "\\.\\d+$"))
+
+# Extract shrunk log2 fold changes and adjusted p-values from DESeq2 results
+de_stats <- de_results$shrunk |>
+  tibble::as_tibble(rownames = "gene_id") |>
+  dplyr::select(gene_id, log2FoldChange, padj)
+
+# Join DE stats to a temporary object to avoid overwriting marker_genes across re-renders
+marker_genes_de <- marker_genes |>
+  dplyr::mutate(gene_id = stringr::str_remove(gene_id, "\\.\\d+$")) |>
+  dplyr::left_join(de_stats, by = "gene_id") |>
+  dplyr::mutate(
+    padj_label = dplyr::case_when(
+      is.na(padj) ~ "Not tested",
+      padj == 0   ~ "padj ≈ 0",
+      TRUE        ~ paste0("padj = ", signif(padj, 3))
+    ),
+    sig_star = dplyr::if_else(!is.na(padj) & padj < 0.05, "*", ""),
+    # Build strip label: gene symbol + significance star + padj
+    strip_label = paste0(gene_symbol, sig_star, "\n", padj_label)
+  )
+
+# Create a color mapping per gene based on clinical panel
+strip_colors <- marker_genes_de |>
+  dplyr::select(strip_label, panel) |>
+  dplyr::mutate(color = dplyr::case_when(
+    panel == "Hereditary Colon Cancer" ~ "#a8dadc",
+    panel == "Somatic Colon Panel, Liquid or Tissue Biopsy" ~ "#f4a261"
+  ))
+
+# Preserve original gene order
+strip_label_levels <- marker_genes_de$strip_label
+
+# Create custom colored strip backgrounds using ggh4x + ggtext for markdown rendering
+custom_strip <- ggh4x::strip_themed(
+  background_x = ggh4x::elem_list_rect(fill = strip_colors$color),
+  text_x       = ggh4x::elem_list_text(colour = rep("black", nrow(strip_colors)))
+)
+
+```
+
+# TPM Expression \| Cancer vs Healthy
+
+TPM (Transcripts Per Million) is a normalization method for RNA-seq data that accounts for both gene length and sequencing depth, making it suitable for comparing expression levels across samples. The boxplots below show the TPM distribution for each marker gene in cancer and healthy samples, with the strip background colored according to the clinical panel of origin. Each strip also displays the differential expression status and adjusted p-value (Benjamini-Hochberg FDR) for that gene, as determined by DESeq2.
+
+```{r}
+#| label: marker-genes-boxplot
+#| fig-width: 14
+#| fig-height: 10
+
+# Build boxplot of TPM expression for marker genes, faceted by strip_label
+marker_genes_boxplot <- tpm |>
+  dplyr::filter(gene_id %in% marker_genes_de$gene_id) |>
+  dplyr::left_join(dplyr::select(marker_genes_de, gene_id, strip_label, panel), by = "gene_id") |>
+  dplyr::mutate(
+    strip_label    = factor(strip_label, levels = strip_label_levels),
+    disease_status = factor(disease_status, levels = c("healthy", "cancer"))
+  ) |>
+  ggplot2::ggplot(ggplot2::aes(x = disease_status, y = tpm, fill = disease_status)) +
+  ggplot2::geom_boxplot(outlier.shape = 21, outlier.size = 1.5, alpha = 0.8) +
+  ggh4x::facet_wrap2(~ strip_label, scales = "free_y", strip = custom_strip) +
+  ggplot2::scale_fill_manual(values = c("cancer" = "#E63946", "healthy" = "#457B9D")) +
+  ggplot2::theme_bw(base_size = 12) +
+  ggplot2::labs(
+    title   = "TPM expression by disease status | Colorectal cancer marker genes",
+    x       = NULL,
+    y       = "TPM",
+    caption = "<span style='color:#a8dadc;font-size:16px'>■</span> Hereditary Colon Cancer &nbsp;&nbsp;
+    <span style='color:#f4a261;font-size:16px'>■</span> Somatic Colon Panel, Liquid or Tissue Biopsy"
+  ) +
+  ggplot2::theme(
+    legend.position    = "none",
+    strip.text         = ggplot2::element_text(
+                           face   = "bold",
+                           size   = 10,
+                           hjust  = 0.5,
+                           colour = "black"
+                         ),
+    axis.text.x        = ggplot2::element_text(size = 10, face = "bold"),
+    axis.text.y        = ggplot2::element_text(size = 8),
+    panel.grid.minor   = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_blank(),
+    plot.title         = ggplot2::element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.caption       = ggtext::element_markdown(size = 10)
+  )
+
+marker_genes_boxplot
+
+```

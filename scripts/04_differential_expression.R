@@ -10,8 +10,9 @@ counts <- readRDS("data/processed/merged/counts.rds")
 ## Annotate genes upfront
 #
 
-# Remove Ensembl version suffixes from gene IDs
+# Remove TCGA NT (normal adjacent tissue) samples and Ensembl version suffixes from gene IDs
 counts <- counts |>
+  dplyr::filter(shortLetterCode != "NT") |>
   dplyr::mutate(gene_id = stringr::str_remove(gene_id, "\\.\\d+$"))
 
 # Fetch gene annotations for all genes in the dataset
@@ -77,17 +78,17 @@ de_deseq <- list()
 # DE Step 1: Create DESeqDataSet object
 # Uncomment if needed
 
-# de_deseq$dds <- DESeq2::DESeqDataSetFromMatrix(
-#   countData = gene_counts,
-#   colData   = samples,
-#   design    = ~ disease_status
-# )
+de_deseq$dds <- DESeq2::DESeqDataSetFromMatrix(
+  countData = gene_counts,
+  colData   = samples,
+  design    = ~ disease_status
+)
 
 
 # DE Step 2: Run DESeq analysis
 # Uncomment if needed: this step takes around 25 minutes in rise-cafe VM
 
-# de_deseq$dds <- DESeq2::DESeq(de_deseq$dds)
+de_deseq$dds <- DESeq2::DESeq(de_deseq$dds)
 
 
 #

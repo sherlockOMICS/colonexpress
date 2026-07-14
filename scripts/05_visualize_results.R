@@ -13,7 +13,7 @@ library(grid)
 # Load DE results, normalised counts, and PCA results
 de_results <- readRDS("data/processed/de_results.rds")
 normalised_counts <- readRDS("data/processed/normalised_counts.rds")
-pca_results <- readRDS("data/processed/pca_results.RDS")
+pca_results <- readRDS("data/processed/pca_results.rds")
 
 # List to store all visualisation plots
 de_plots <- list()
@@ -28,17 +28,19 @@ sig_gene_ids <- de_results$sig$gene_id
 # Get normalized counts for significant genes
 sig_normalised_counts <- normalised_counts |>
   dplyr::filter(gene_id %in% sig_gene_ids) |>
+  dplyr::left_join(dplyr::select(de_results$sig, gene_id, padj), by = "gene_id") |>
+  dplyr::arrange(padj) |>
   dplyr::select(-gene_description) |>
   dplyr::mutate(
     gene_symbol  = dplyr::coalesce(gene_symbol, gene_id),
     .row_mean    = rowMeans(dplyr::pick(where(is.numeric)))
   ) |>
-  dplyr::select(-gene_id) |>
+  dplyr::select(-gene_id, -padj) |>
   dplyr::slice_max(
     order_by   = .row_mean,
     n          = 1,
     by         = gene_symbol,
-    with_ties  = FALSE       # guarantees exactly one row per symbol
+    with_ties  = FALSE
   ) |>
   dplyr::select(-.row_mean) |>
   tibble::column_to_rownames("gene_symbol") |>
@@ -69,7 +71,7 @@ de_plots$ht <- ComplexHeatmap::Heatmap(
   # Hierarchical clustering of rows and columns
   cluster_columns = TRUE,
   cluster_rows    = TRUE,
-  # Split rows into 2 clusters via K-means
+  # Split rows into 3 clusters via K-means
   row_km        = 3,
   row_title     = c("A", "B", "C"),
   row_title_rot = 90,
@@ -79,7 +81,7 @@ de_plots$ht <- ComplexHeatmap::Heatmap(
   column_gap = grid::unit(2, "mm"),
   border = "grey",
   na_col = "white",
-  # Color scale based on clipped range [-4, 40]
+  # Diverging colour scale centred at 0 (z-score)
   col = circlize::colorRamp2(c(-3, 0, 3), c("skyblue3", "white", "forestgreen")),
   # row_names_gp      = grid::gpar(fontsize = 2),
   show_row_names      = FALSE,
@@ -90,13 +92,20 @@ de_plots$ht <- ComplexHeatmap::Heatmap(
 # Draw the heatmap
 ComplexHeatmap::draw(de_plots$ht, heatmap_legend_side = "right")
 
+# Save the heatmap
+pdf(here::here("output/top200deg.pdf"), width = 8, height = 10)
+ComplexHeatmap::draw(de_plots$ht, heatmap_legend_side = "right")
+dev.off()
+
 #
 ## Volcano plot
 #
 
 # # Add a column with differential expression status and add gene symbol to the results
 sig_res_annot <-
-  de_results$sig |>
+  de_results$shrunk |>
+  as.data.frame() |>
+  tibble::rownames_to_column("gene_id") |>
   dplyr::mutate(diffexpressed = case_when(
     log2FoldChange > 5 & padj < 0.0001 ~ 'upregulated',
     log2FoldChange < -5 & padj < 0.0001 ~ 'downregulated',
@@ -173,13 +182,9 @@ de_plots$volcano_plot <-
   scale_y_continuous(expand = expansion(mult = c(0, 0.02))) +
   labs(
     x       = "log\u2082 fold change (cancer / healthy)",
-    y       = "-log\u2081\u2080(adjusted p-value)",
+    y       = "-log\u2081\u2080(p-value)",
     colour  = NULL,
     title   = "Differential expression: cancer vs healthy",
-    caption = paste0(
-      "Dashed lines: |LFC| = 5 and p-value at padj 0.0001 threshold. ",
-      "Top 20 significant genes labelled."
-    )
   ) +
   theme_bw(base_size = 11) +
   theme(
@@ -191,6 +196,14 @@ de_plots$volcano_plot <-
 
 # Print the volcano plot
 de_plots$volcano_plot
+
+# Save the volcano plot
+ggplot2::ggsave(
+  filename = here::here("output/volcano_plot.pdf"),
+  plot     = de_plots$volcano_plot,
+  width    = 10,
+  height   = 8
+)
 
 #
 ## PCA | Top genes driving PC1
@@ -210,3 +223,24 @@ pca_loadings <- pca_results$pca_vst$rotation |>
 
 # Save PCA loadings for PC1 and PC2 to CSV
 readr::write_csv2(pca_loadings, here::here("output/pca_loadings.csv"))
+
+#
+## Differential expression genes — annotated table (CSV + Excel)
+#
+
+# Join shrunk DE results with gene_symbol and gene_description from de_results$sig
+de_annotated <- de_results$shrunk |>
+  as.data.frame() |>
+  tibble::rownames_to_column("gene_id") |>
+  dplyr::left_join(
+    de_results$sig |>
+      dplyr::select(gene_id, gene_symbol, gene_description) |>
+      dplyr::distinct(), by = "gene_id") |>
+  dplyr::mutate(
+    gene_symbol      = dplyr::coalesce(gene_symbol, gene_id),
+    gene_description = dplyr::coalesce(gene_description, gene_id)) |>
+  dplyr::relocate(gene_id, gene_symbol, gene_description) |>
+  dplyr::arrange(dplyr::desc(log2FoldChange))
+          
+# Save differential expression genes table as CSV
+readr::write_csv2(de_annotated, here::here("output/de_results_annotated.csv"))

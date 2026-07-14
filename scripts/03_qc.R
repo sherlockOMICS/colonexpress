@@ -2,8 +2,8 @@ library(here)
 library(dplyr)
 library(tidyr)
 library(tibble)
-library(DESeq2)
 library(ggplot2)
+library(DESeq2)
 library(RColorBrewer)
 library(pheatmap)
 
@@ -55,7 +55,7 @@ qc$components <- tibble::as_tibble(qc$components, rownames = "samples")
 
 # Extract sample annotations to color PCA points
 sample_metadata <- counts |>
-  dplyr::select(samples, tissue, disease_status) |>
+  dplyr::select(samples, tissue, disease_status, stage, shortLetterCode) |>
   dplyr::distinct() |>
   dplyr::mutate(
     disease_status = factor(disease_status, levels = c("healthy", "cancer"))
@@ -138,6 +138,50 @@ qc$pca_tissue_disease_status <-
   ) +
   ggplot2::theme_minimal()
 
+# Color by stage
+qc$pca_stage <-
+  ggplot2::ggplot(qc$components_annot, ggplot2::aes(x = PC1, y = PC2, color = stage)) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::labs(
+    title = "PCA gene expression | Colored by stage",
+    x = paste0("PC1 (", qc$pca_percent_var[1], "% variance)"),
+    y = paste0("PC2 (", qc$pca_percent_var[2], "% variance)"),
+    color = "Stage"
+  ) +
+  ggplot2::theme_minimal()
+
+# Color by sample type - TCGA NT (normal adjacent tissue) highlighted against all others
+qc$pca_sample_type <-
+  ggplot2::ggplot(
+    qc$components_annot |>
+      dplyr::mutate(shortLetterCode = factor(shortLetterCode, levels = c("healthy", "TP", "TR", "NT", "TM"))),
+    ggplot2::aes(x = PC1, y = PC2, color = shortLetterCode)) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::geom_point(
+    data = ~ dplyr::filter(., shortLetterCode == "TR"),
+    size = 3, color = "darkblue"
+  ) +
+  ggplot2::geom_point(
+    data = ~ dplyr::filter(., shortLetterCode == "TM"),
+    size = 3, color = "orange"
+  ) +
+  ggplot2::scale_color_manual(
+    values = c(
+      "NT"      = "firebrick",
+      "TP"      = "steelblue",
+      "TM"      = "orange",
+      "TR"      = "darkblue",
+      "healthy" = "olivedrab"
+    )
+  ) +
+  ggplot2::labs(
+    title = "PCA gene expression | Colored by sample type",
+    x = paste0("PC1 (", qc$pca_percent_var[1], "% variance)"),
+    y = paste0("PC2 (", qc$pca_percent_var[2], "% variance)"),
+    color = "Sample type"
+  ) +
+  ggplot2::theme_minimal()
+
 #
 ## Sample-to-sample distance heatmap
 #
@@ -193,6 +237,11 @@ qc$corr_clustering <- pheatmap::pheatmap(
   fontsize       = 8
 )
 
+# Create output directory if it doesn't exist
+if (!dir.exists(here::here("output"))) {
+  dir.create(here::here("output"), recursive = TRUE, showWarnings = FALSE)
+  }
+
 # Save PCA plots
 ggplot2::ggsave(
   filename = here::here("output/pca_disease_status.pdf"),
@@ -215,6 +264,20 @@ ggplot2::ggsave(
   height   = 6
 )
 
+ggplot2::ggsave(
+  filename = here::here("output/pca_stage.pdf"),
+  plot     = qc$pca_stage,
+  width    = 8,
+  height   = 6
+)
+
+ggplot2::ggsave(
+  filename = here::here("output/pca_sample_type.pdf"),
+  plot     = qc$pca_sample_type,
+  width    = 8,
+  height   = 6
+)
+
 # Save heatmaps
 pdf(here::here("output/dist_clustering.pdf"), width = 8, height = 6)
 print(qc$dist_clustering)
@@ -225,9 +288,5 @@ print(qc$corr_clustering)
 dev.off()
 
 # Export PCA object to disc
-data_processed_path <- here::here("data/processed/pca_results.RDS")
+data_processed_path <- here::here("data/processed/pca_results.rds")
 if (!file.exists(data_processed_path)) saveRDS(qc[2:5], file = data_processed_path)
-
-
-
-
